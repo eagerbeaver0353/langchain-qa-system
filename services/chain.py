@@ -1,9 +1,6 @@
 import os
 from langchain.prompts import (
-    ChatPromptTemplate,
-    MessagesPlaceholder,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
+    PromptTemplate
 )
 from langchain.llms import OpenAI
 from langchain.chains import RetrievalQA
@@ -41,6 +38,14 @@ def configure_conversational_retrieval_chain():
     return qa
 
 
+def get_similar_document(question):
+    CHROMA_DB_DIRECTORY = os.environ.get("CHROMA_DB_DIRECTORY")
+    vectorstore = Chroma(
+        persist_directory=CHROMA_DB_DIRECTORY, embedding_function=OpenAIEmbeddings()
+    )
+    
+    return vectorstore.similarity_search(query= question, k=1)[0].page_content
+
 def configure_retrieval_chain(**kwargs):
     # LLM
     llm = OpenAI(verbose=True, **kwargs)
@@ -50,11 +55,23 @@ def configure_retrieval_chain(**kwargs):
         persist_directory=CHROMA_DB_DIRECTORY, embedding_function=OpenAIEmbeddings()
     )
 
+    prompt_template = """This is a pair of template question and answer.
+
+{context}
+
+Given the following question respond as same as possible to the template answer if the template question matches the asked question. Only adjust the answer accordingly if the asked question differs from the template question. Don't be creative at all and only reference this pair of question and answer.
+
+Question: {question}
+Helpful Answer:"""
+    PROMPT = PromptTemplate(
+        template=prompt_template, input_variables=["context", "question"]
+    )
+
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
         retriever=vectorstore.as_retriever(search_kwargs={"k": 1}),
-        chain_type_kwargs={"verbose": True},
+        chain_type_kwargs={"verbose": True, "prompt": PROMPT},
     )
 
     return qa
